@@ -1,0 +1,483 @@
+{Kwiatkowski Dawid 2026 - Turbo Pascal S3 Trio 64 driver}
+{Work with 86C764X chip                                 }
+{No work with 86C765 and higer                          }
+
+
+program stest;
+uses crt,dos;
+type
+ TBmp128x64 = array[0..63,0..127] of Byte;
+ TRGB = record
+  R, G, B : Byte;
+ end;
+ TPalette = array[0..255] of TRGB;
+var id,r1,r2,r3,r4:word;
+i,i1,i2,k :integer;
+ Pal : Tpalette;
+ MYBMp:TBMp128x64;
+const
+  S3_CUR_Y        = $82E8;  {CUR Y}
+  S3_CUR_X        = $86E8;  {CUR X}
+  S3_CUR_Y2       = $82EA;  {CUR Y2}
+  S3_CUR_X2       = $86EA;  {CUR X2}
+  S3_DEST_X       = $8AE8;  {DESTY - s3 documention have mistake}
+  S3_DEST_Y       = $8EE8;  {DESTX}
+  S3_DEST_X2      = $8AEA;  {DESTY2}
+  S3_DEST_Y2      = $8EEA;  {DESTX2}
+  S3_ERR_TERM     = $92E8;
+  S3_ERR_TERM2    = $92EA;
+  S3_CMD          = $9AE8;
+  S3_CMD2         = $9AEA;
+  S3_SHORT_STROKE = $9EE8;
+  S3_BKGD_COLOR   = $A2E8;
+  S3_FRGD_COLOR   = $A6E8;
+  S3_WRT_MASK     = $AAE8;
+  S3_RD_MASK      = $AEE8;
+  S3_COLOR_CMP    = $B2E8;
+  S3_BKGD_MIX     = $B6E8;
+  S3_FRGD_MIX     = $BAE8;
+  S3_SCISSOR_T    = $BEE8;
+  S3_SCISSOR_L    = $BEE8;
+  S3_SCISSOR_B    = $BEE8;
+  S3_SCISSOR_R    = $BEE8;
+  S3_PIX_CNTL     = $BEE8;
+  S3_MULT_MISC    = $BEE8;
+  S3_MIN_AXIS     = $BEE8;
+  S3_MAJ_AXIS     = $96E8;
+  S3_MAJ_AXIS2    = $96EA;
+  S3_PIX_TRANS    = $E2E8;
+  S3_PIX_TRANS2   = $E2EA;
+  S3_PAT_Y        = $EAE8;
+  S3_PAT_X        = $EAEA;
+
+function WordToHex(w :Word):string;
+const
+ hex: array[0..15] of char = ('0','1','2','3','4','5','6','7','8','9','A','B','C','D','E','F');
+begin
+ WordToHex := hex[(w shr 12) and $F] +
+              hex[(w shr 8) and $F] +
+              hex[(w shr 4) and $F] +
+              hex[w and $F];
+end;
+procedure SetMode(mode:word);assembler;
+ asm
+  mov ax,4f02h
+  mov bx,203h
+  int $10
+end;
+procedure SetTextMode;assembler;
+asm
+ mov ax,$0003
+ int $10
+end;
+procedure OutW(port,value:Word);
+ begin
+  asm
+   mov dx, port
+   mov ax, value
+   out dx,ax
+  end;
+ end;
+function ReadPortW(port: Word):Word; assembler;
+ asm
+  mov dx,port
+  in ax,dx
+ end;
+function S3_GetChipID:Word; assembler;
+ asm
+  mov dx,$3D4
+  mov al,$2D
+  out dx,al
+  inc dx
+  in al,dx
+  mov ah,al
+  dec dx
+  mov al,$2E
+  out dx,al
+  in al,dx
+  mov al,al
+ end;
+procedure S3_GetVRAM_MB;
+ var code,v: byte;
+ begin
+  Port[$3C4]:=$36;
+  v:=Port[$3C5];
+  code:=(v shr 3) and $07;
+  case code of
+  0: writeln('Karta ma 512kB');
+  1: writeln('Karta ma 1MB');
+  2: writeln('Karta ma 2MB');
+  3: writeln('Karta ma 4Mb');
+  else
+  end;
+ end;
+
+function TestPort(port : Word):Word; assembler;
+ asm
+  mov dx, port
+  mov ax, $55AA
+  out dx,ax
+  in ax,dx
+ end;
+procedure S3_SetMode1;
+ var v:byte;
+ begin
+  asm
+  {Chip wake up}
+  mov dx,46E8h
+  mov al,10h
+  out dx,al
+
+  mov dx,102h
+  mov al,01h
+  out dx,al
+
+  mov dx,46E8h
+  mov al,08h
+  out dx,al
+
+  mov dx,4AE8h
+  xor al,al
+  out dx,al
+  {CR 38 - register on}
+  mov dx,3d4h
+  mov al,38h
+  out dx,al
+  inc dx
+  mov al,48h
+  out dx,al
+  dec dx
+  {CR 39 = register on}
+  mov al,39h
+  out dx,al
+  inc dx
+  mov al,0a5h
+  out dx,al
+  dec dx
+  {CR40 - register on}
+  mov al,40h
+  out dx,al
+  inc dx
+  in al,dx
+  or al,1
+  out dx,al
+  dec dx
+ end;
+ {Unclock CRT}
+ OutW($3D4,$3848);
+ OutW($3D4,$39A5);
+ OutW($3C4,$0806);
+  {Device and scren off}
+  Port[$3C4]:=$01;
+  v:=Port[$3C5];
+  v:=v or $20;
+  OutW($3D4,($01 shl 8) or v);
+  Port[$3D4]:=$17;
+  v:=Port[$3D5];
+  v:= v and not $7F;
+  OutW($3d4,($17 shl 8) or v);
+ {CR40---}
+ Port[$3D4]:=40;
+ v:=Port[$3D5];
+ v:=v or $01;
+ OutW($3D4,($40 shl 8) or v);
+ OutW($4AE8,$0001);
+
+ OutW($3D4,$318A);
+ OutW($3D4,$3A10);
+ OutW($3D4,$3B00);
+ OutW($3D4,$6705);
+ OutW($3D4,$5002);
+ OutW($3D4,$5100);
+ OutW($3D4,$35E0);
+ {Ustawienia SEQ}
+ { OutW($3C4,$020F);
+  OutW($3C4,$040E);  }
+ {Sett PLL }
+  OutW($3D4,$542C);
+  OutW($3D4,$6003);
+  OutW($3D4,$6100);
+  OutW($3D4,$6200);
+  {Set CRRT}
+  OutW($3D4,$007F);
+  OutW($3D4,$0163);
+  OutW($3D4,$0264);
+  OutW($3D4,$0382);
+  OutW($3D4,$046A);
+  OutW($3D4,$051B);
+  OutW($3D4,$060D);
+  OutW($3D4,$073E);
+
+  OutW($3D4,$1000);
+  OutW($3D4,$118E);
+  OutW($3D4,$1257);
+  OutW($3D4,$159C);
+  OutW($3D4,$168E);
+  OutW($3D4,$18FF);
+  {EXT CRTC}
+{  OutW($3D4,$318C);
+  OutW($3D4,$3200);
+  OutW($3D4,$3320);
+  OutW($3D4,$3400);
+  OutW($3D4,$3500);
+  OutW($3D4,$3600);
+  OutW($3D4,$3700);
+  {Ocerflow}
+  OutW($3D4,$5D00);
+  OutW($3D4,$5E00);
+  {Enable CR31 > 256k fraebuffor}
+{  Port[$3D4]:=$31;
+  v:=Port[$3D5];
+  v:=v or $08;
+  OutW($3D4,($31 shl 8) or v);
+  {CR 58 - enable linera frame buffer}
+ { Port[$3D4]:=$58;
+  v:=Port[$3D5];
+  v:= v or $10;
+  OutW($3D4, ($58 shl 8) or v);
+  {CR53 = 00h}
+ { OutW($3D4,$5300);
+  {Pitch (CR13 + CR51}
+  OutW($3D4,$1364);
+  OutW($3C6,$00FF);
+  OutW($3C2,$0023);
+
+  {Device and screbb back on}
+  {CR17: bit7 = 1 -> sync on}
+  Port[$3D4]:=$17;
+  v:=Port[$3D5];
+  v:=v or $80;
+  Port[$3D5]:=v;
+  {SEQ01 : bit5 - 0 -> Screen on}
+  Port[$3C4]:=$01;
+  v:=Port[$3C5];
+  v:= v and not $20;
+  Port[$3C5]:=v;
+
+ end;
+procedure Putpixel(x,y:word; color:byte);
+ var ofs:longint;
+
+ bank: word;
+ begin
+   ofs:=longint(y)*1024 + x;
+   bank:=ofs shr 16;
+  asm
+   mov ax,4F05h
+   mov bx,0
+   mov dx,bank
+   int 10h
+  end;
+   ofs := ofs and $FFFF;
+   Mem[$A000:ofs]:=color;
+ end;
+{Rysowanie prostokata wypelnionego kolorem - testy OK}
+procedure S3_RectFill(x,y,w,h:word; color:byte);
+ var cmd:word;
+begin
+ OutW(S3_FRGD_MIX,$0027);
+ OutW(S3_FRGD_COLOR,color);
+ OutW(S3_PIX_CNTL,$A000);
+ OutW(S3_CUR_X,x);
+ OutW(S3_CUR_Y,y);
+ OutW(S3_MIN_AXIS,h-1);
+ OutW(S3_MAJ_AXIS,w-1);
+ OutW(S3_CMD,$40B1);
+end;
+{Rysowanie linie - niedziala}
+procedure S3_Line(x1,y1,x2,y2:word; color:word);
+var
+   dx,dy,adx,ady,maxv,minv,yIsMajor,xPosDir,yPosDir,dir_flag,errTerm,stepAxiel,stepDiag:integer;
+   cmd:Word;
+ begin
+ {Roznica wpsolrzednych}
+ dx:= x2-x1;
+ dy:= y2-y1;
+ adx:=Abs(dx);
+ ady:=Abs(dy);
+ {MIN / MAX zgodnie z wymogiami S3}
+ if adx >ady then
+  begin
+   maxv:=adx;
+   minv:=ady;
+  end
+  else
+  begin
+   maxv:=ady;
+   minv:=adx;
+  end;
+ if dx >=0 then
+  errTerm := 2*minv-maxv
+ else
+  errTerm := 2*minv-maxv-1;
+
+ OutW(S3_FRGD_MIX,$0027);
+ OutW(S3_FRGD_COLOR,color);
+ OutW(S3_PIX_CNTL,$A000);
+ OutW(S3_CUR_X,x1);
+ OutW(S3_CUR_Y,y1);
+ OutW(S3_MAJ_AXIS,maxv-1);
+ OutW(S3_DEST_Y,2*(minv-maxv));
+ OutW(S3_DEST_X,2*minv);
+ OutW(S3_ERR_TERM,errTerm);
+ OutW($96E8,maxv-1);
+ dir_flag:=0;
+ if dy>=0 then dir_flag:=dir_flag or $80;
+ if ady > adx then dir_flag:=dir_flag or $40;
+ if dx >=0 then dir_flag:=dir_flag or $20;
+ cmd:=$2011 or dir_flag;
+ OutW(S3_CMD,cmd);
+ end;
+procedure LoadBMP(const FileName:string; var IMg:TBmp128x64; var Pal:TPalette);
+ var
+  f:File;
+  Header: array[0..53] of Byte;
+  Palette: array[0..1023] of Byte;
+  Row: array[0..127] of Byte;
+  y:integer;
+ begin
+  Assign(f,FileName);
+  Reset(f,1);
+  BlockRead(f,Header,54);
+  BlockRead(f,Palette,1024);
+  for i:= 0 to 255 do
+   begin
+    Pal[i].B := Palette[i*4+0];
+    Pal[i].G := Palette[i*4+1];
+    Pal[i].R := Palette[i*4+2];
+   end;
+  for y:=63 downto 0 do
+   begin
+    BlockRead(f, Row,128);
+    Move(Row, IMg[y][0],128);
+   end;
+ Close(f);
+ end;
+procedure SetVGAPalette(var Pal:TPalette);
+var
+ i:Integer;
+ begin
+  Port[$3C8]:=0;
+  for i:=0 to 255 do
+   begin
+    Port[$3C9]:=Pal[i].R shr 2;
+    Port[$3C9]:=Pal[i].G shr 2;
+    Port[$3C9]:=Pal[i].B shr 2;
+   end;
+ end;
+procedure S3_LoadBmp128x64(x,y:word;var IMg: TBMP128x64);
+var
+ row,col:integer;
+ p: ^Byte;
+ Xpos,Ypos : word;
+ d:Longint;
+ begin
+  OutW($BAE8,$0047);
+  OutW($BEE8,$A000);
+  OutW($82E8,y);
+  OutW($86E8,x);
+  OutW($BEE8,63);
+  OutW($96E8,127);
+  OutW($9AE8,$51B1);
+  for row:=0 to 63 do
+   begin
+    P:=@Img[row][0];
+    for col:=0 to 127 do
+     begin
+      Port[$E2E8]:=P^;
+      Inc(P);
+     end;
+   end;
+ end;
+procedure S3_BitVramCopy(SrcX,SrcY,DstX,DstY,Width,Height:Word);
+ var Cmd:Word;
+     StartSrcX,StartSrcY:Word;
+     StartDstX,StartDstY:Word;
+     XPositive,YPositive:Boolean;
+ begin
+  OutW(S3_PIX_CNTL,$A000);
+  OutW(S3_FRGD_MIX,$0067);
+  XPositive := DstX >= SrcX;
+  YPositive := DstY >= SrcY;
+  if XPositive then
+   begin
+    StartSrcX := SrcX;
+    StartDstX := DstX;
+   end
+   else
+    begin
+     StartSrcX := SrcX + Width -1;
+     StartDstX := DstX + Width -1;
+    end;
+  if YPositive then
+   begin
+    StartSrcY := SrcY;
+    StartDstY := Dsty;
+   end
+   else
+   begin
+    StartSrcY:=SrcY + Height - 1;
+    StartDstY:=DstY + Height - 1;
+   end;
+ OutW(S3_CUR_X,StartSrcX);
+ OutW(S3_CUR_Y,StartSrcY);
+ OutW(S3_DEST_X,StartDstY);
+ OutW(S3_DEST_Y,StartDstX);
+ {Wymiary obszaru}
+ OutW(S3_MIN_AXIS,Height -1);
+ OutW(S3_MAJ_AXIS,Width -1);
+ {CMD Make}
+ Cmd:=$C0C1;
+ if XPositive then Cmd:=Cmd or $0020;
+ if YPositive then Cmd:=Cmd or $0080;
+ OutW(S3_CMD,cmd);
+ end;
+begin
+{clrscr;
+writeln('----------Diagnostyka S3----');
+{id:=S3_GetChipID;
+writeln('Chip ID: ',WordToHex(id));
+S3_GetVRAM_MB; }
+LoadBMP('C:\test1.bmp',MyBmp,Pal);
+{Writeln('Load C:\test1.bmp');
+{readln; }
+{SetMode($0101); }
+{SetVGAPalette(Pal);}
+SetMode(1);
+Putpixel(300,400,15);
+Putpixel(301,400,15);
+Putpixel(301,401,15);
+Putpixel(300,401,15);
+Putpixel(1,1,15);
+Putpixel(50,50,15);
+Putpixel(100,50,15);
+delay(1000);
+for i:=0 to 127 do
+ for i1:=1 to 63 do
+  Putpixel(500+i,100+i1,MyBmp[i1,i]);
+for i2:=1 to 2 do
+ begin
+ k:=0;
+for i:=1 to 10 do
+ for i1:=1 to 10 do
+ begin
+  S3_RectFill(10+i1*20+i2,10+i*20,15,15,k);
+  k:=k+1;
+ end;
+delay(10);
+ end;
+S3_Line(300,300,500,400,60);
+S3_LoadBmp128x64(800,65,MyBmp);
+S3_BitVramCopy(800,65,500,500,128,64);
+r1:=ReadPortW($42E8);
+r2:=ReadPortW($4AE8);
+r3:=ReadPortW($82E8);
+r4:=ReadPortW($8AE8);
+readln;
+SetTextMode;
+writeln('Port 42E8h (Trio/Virage FRGD_Color) :$',WordToHex(r1));
+writeln('Port 4AE8h (Trio/Virage FRGD_Color) :$',WordToHex(r2));
+writeln('Port 82E8h (Trio/Virage FRGD_Color) :$',WordToHex(r3));
+writeln('Port 8AE8h (Trio/Virage FRGD_Color) :$',WordToHex(r4));
+readln;
+end.
