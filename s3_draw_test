@@ -1,6 +1,14 @@
 {Kwiatkowski Dawid 2026 - Turbo Pascal S3 Trio 64 driver}
 {Work with 86C764X chip                                 }
 {No work with 86C765 and higer                          }
+{List of function                                       }
+{SetMode - Run graphiv mode 800x600 - 8 bit (256 kolor) }
+{Putpixel- create pixel in x,y - position c - color     }
+{S3_RectFill - create rectangle                         }
+{S3_:ine     - create line                              }
+{LoadBMP     - load bmp to RAM                          }
+{S3_LoadBmp128x64 - load bmp form RAM to VRAM           }
+{S3_BitVramCopy   - copy bmp in VRAM                    }
 
 
 program stest;
@@ -59,7 +67,7 @@ begin
               hex[(w shr 4) and $F] +
               hex[w and $F];
 end;
-procedure SetMode(mode:word);assembler;
+procedure SetMode;assembler;
  asm
   mov ax,4f02h
   mov bx,203h
@@ -83,178 +91,7 @@ function ReadPortW(port: Word):Word; assembler;
   mov dx,port
   in ax,dx
  end;
-function S3_GetChipID:Word; assembler;
- asm
-  mov dx,$3D4
-  mov al,$2D
-  out dx,al
-  inc dx
-  in al,dx
-  mov ah,al
-  dec dx
-  mov al,$2E
-  out dx,al
-  in al,dx
-  mov al,al
- end;
-procedure S3_GetVRAM_MB;
- var code,v: byte;
- begin
-  Port[$3C4]:=$36;
-  v:=Port[$3C5];
-  code:=(v shr 3) and $07;
-  case code of
-  0: writeln('Karta ma 512kB');
-  1: writeln('Karta ma 1MB');
-  2: writeln('Karta ma 2MB');
-  3: writeln('Karta ma 4Mb');
-  else
-  end;
- end;
 
-function TestPort(port : Word):Word; assembler;
- asm
-  mov dx, port
-  mov ax, $55AA
-  out dx,ax
-  in ax,dx
- end;
-procedure S3_SetMode1;
- var v:byte;
- begin
-  asm
-  {Chip wake up}
-  mov dx,46E8h
-  mov al,10h
-  out dx,al
-
-  mov dx,102h
-  mov al,01h
-  out dx,al
-
-  mov dx,46E8h
-  mov al,08h
-  out dx,al
-
-  mov dx,4AE8h
-  xor al,al
-  out dx,al
-  {CR 38 - register on}
-  mov dx,3d4h
-  mov al,38h
-  out dx,al
-  inc dx
-  mov al,48h
-  out dx,al
-  dec dx
-  {CR 39 = register on}
-  mov al,39h
-  out dx,al
-  inc dx
-  mov al,0a5h
-  out dx,al
-  dec dx
-  {CR40 - register on}
-  mov al,40h
-  out dx,al
-  inc dx
-  in al,dx
-  or al,1
-  out dx,al
-  dec dx
- end;
- {Unclock CRT}
- OutW($3D4,$3848);
- OutW($3D4,$39A5);
- OutW($3C4,$0806);
-  {Device and scren off}
-  Port[$3C4]:=$01;
-  v:=Port[$3C5];
-  v:=v or $20;
-  OutW($3D4,($01 shl 8) or v);
-  Port[$3D4]:=$17;
-  v:=Port[$3D5];
-  v:= v and not $7F;
-  OutW($3d4,($17 shl 8) or v);
- {CR40---}
- Port[$3D4]:=40;
- v:=Port[$3D5];
- v:=v or $01;
- OutW($3D4,($40 shl 8) or v);
- OutW($4AE8,$0001);
-
- OutW($3D4,$318A);
- OutW($3D4,$3A10);
- OutW($3D4,$3B00);
- OutW($3D4,$6705);
- OutW($3D4,$5002);
- OutW($3D4,$5100);
- OutW($3D4,$35E0);
- {Ustawienia SEQ}
- { OutW($3C4,$020F);
-  OutW($3C4,$040E);  }
- {Sett PLL }
-  OutW($3D4,$542C);
-  OutW($3D4,$6003);
-  OutW($3D4,$6100);
-  OutW($3D4,$6200);
-  {Set CRRT}
-  OutW($3D4,$007F);
-  OutW($3D4,$0163);
-  OutW($3D4,$0264);
-  OutW($3D4,$0382);
-  OutW($3D4,$046A);
-  OutW($3D4,$051B);
-  OutW($3D4,$060D);
-  OutW($3D4,$073E);
-
-  OutW($3D4,$1000);
-  OutW($3D4,$118E);
-  OutW($3D4,$1257);
-  OutW($3D4,$159C);
-  OutW($3D4,$168E);
-  OutW($3D4,$18FF);
-  {EXT CRTC}
-{  OutW($3D4,$318C);
-  OutW($3D4,$3200);
-  OutW($3D4,$3320);
-  OutW($3D4,$3400);
-  OutW($3D4,$3500);
-  OutW($3D4,$3600);
-  OutW($3D4,$3700);
-  {Ocerflow}
-  OutW($3D4,$5D00);
-  OutW($3D4,$5E00);
-  {Enable CR31 > 256k fraebuffor}
-{  Port[$3D4]:=$31;
-  v:=Port[$3D5];
-  v:=v or $08;
-  OutW($3D4,($31 shl 8) or v);
-  {CR 58 - enable linera frame buffer}
- { Port[$3D4]:=$58;
-  v:=Port[$3D5];
-  v:= v or $10;
-  OutW($3D4, ($58 shl 8) or v);
-  {CR53 = 00h}
- { OutW($3D4,$5300);
-  {Pitch (CR13 + CR51}
-  OutW($3D4,$1364);
-  OutW($3C6,$00FF);
-  OutW($3C2,$0023);
-
-  {Device and screbb back on}
-  {CR17: bit7 = 1 -> sync on}
-  Port[$3D4]:=$17;
-  v:=Port[$3D5];
-  v:=v or $80;
-  Port[$3D5]:=v;
-  {SEQ01 : bit5 - 0 -> Screen on}
-  Port[$3C4]:=$01;
-  v:=Port[$3C5];
-  v:= v and not $20;
-  Port[$3C5]:=v;
-
- end;
 procedure Putpixel(x,y:word; color:byte);
  var ofs:longint;
 
@@ -284,7 +121,7 @@ begin
  OutW(S3_MAJ_AXIS,w-1);
  OutW(S3_CMD,$40B1);
 end;
-{Rysowanie linie - niedziala}
+{Rysowanie linie }
 procedure S3_Line(x1,y1,x2,y2:word; color:word);
 var
    dx,dy,adx,ady,maxv,minv,yIsMajor,xPosDir,yPosDir,dir_flag,errTerm,stepAxiel,stepDiag:integer;
@@ -441,9 +278,8 @@ S3_GetVRAM_MB; }
 LoadBMP('C:\test1.bmp',MyBmp,Pal);
 {Writeln('Load C:\test1.bmp');
 {readln; }
-{SetMode($0101); }
 {SetVGAPalette(Pal);}
-SetMode(1);
+SetMode;
 Putpixel(300,400,15);
 Putpixel(301,400,15);
 Putpixel(301,401,15);
